@@ -19,7 +19,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # --- Middleware ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS or ["*"],  # configure properly in prod
+    allow_origins=settings.BACKEND_CORS_ORIGINS or ["*","https://onlinevoting-forontend.vercel.app"],  # configure properly in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
