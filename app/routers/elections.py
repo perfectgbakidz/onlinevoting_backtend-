@@ -120,11 +120,12 @@ def cast_vote(
 @router.get('/results/live', response_model=schemas.LiveResultsResponse)
 def live_results(
     db: Session = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(require_role("auditor")),
+    current_user: schemas.UserResponse = Depends(get_current_user),  # ✅ any logged-in user
 ):
-    """Return live results (restricted to auditors + superadmins)"""
+    """Return live results (visible to voters, auditors, and admins)"""
     total = db.query(models.Vote).count()
     candidates = db.query(models.Candidate).all()
+
     data = {"totalVotes": total, "candidates": []}
     for c in candidates:
         data["candidates"].append({
@@ -134,6 +135,7 @@ def live_results(
             "position": c.position
         })
     return data
+
 
 
 @router.get('/stats/voters')
