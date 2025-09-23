@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List
+from datetime import datetime
 from .. import models, schemas, database, dependencies, auth
 import shutil
 import uuid
@@ -11,6 +12,17 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 UPLOAD_DIR = "uploads/candidates"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+
+def get_election_status(election: models.Election) -> str:
+    """Helper to compute status for consistency."""
+    now = datetime.utcnow()
+    if election.start_date > now:
+        return "upcoming"
+    elif election.end_date < now:
+        return "ended"
+    return "active"
+
+
 # ---------------- Dashboard ----------------
 @router.get("/overview")
 def overview(
@@ -18,17 +30,18 @@ def overview(
     current_user=Depends(dependencies.require_role("admin", "superadmin"))
 ):
     total_votes = db.query(models.Vote).count()
-    ongoing = db.query(models.Election).filter(models.Election.status == "ongoing").count()
-    completed = db.query(models.Election).filter(models.Election.status == "completed").count()
+    active = db.query(models.Election).filter(models.Election.status == "active").count()
+    completed = db.query(models.Election).filter(models.Election.status == "ended").count()
     results = (
         db.query(models.Candidate)
         .join(models.Vote, models.Candidate.id == models.Vote.candidate_id, isouter=True)
         .all()
     )
     return {
-        "stats": {"totalVotes": total_votes, "ongoingElections": ongoing, "completedElections": completed},
+        "stats": {"totalVotes": total_votes, "activeElections": active, "completedElections": completed},
         "results": results,
     }
+
 
 # ---------------- Election Management ----------------
 @router.post("/elections", response_model=schemas.ElectionResponse, status_code=status.HTTP_201_CREATED)
@@ -41,8 +54,9 @@ def create_election(
         title=election_in.title,
         start_date=election_in.start_date,
         end_date=election_in.end_date,
-        status="ongoing",
     )
+    ev.status = get_election_status(ev)
+
     db.add(ev)
     db.commit()
     db.refresh(ev)
@@ -57,6 +71,7 @@ def create_election(
     db.commit()
     return ev
 
+
 @router.put("/elections/{election_id}", response_model=schemas.ElectionResponse)
 def update_election(
     election_id: int,
@@ -70,12 +85,13 @@ def update_election(
 
     if election_in.title:
         election.title = election_in.title
-    if election_in.status:
-        election.status = election_in.status
     if election_in.start_date:
         election.start_date = election_in.start_date
     if election_in.end_date:
         election.end_date = election_in.end_date
+
+    # Always recompute status
+    election.status = get_election_status(election)
 
     db.commit()
     db.refresh(election)
@@ -89,6 +105,7 @@ def update_election(
     db.add(audit)
     db.commit()
     return election
+
 
 # ---------------- Candidate Management ----------------
 @router.post("/elections/{election_id}/candidates", response_model=schemas.CandidateResponse, status_code=status.HTTP_201_CREATED)
@@ -133,6 +150,7 @@ def add_candidate(
     db.commit()
     return candidate
 
+
 # ---------------- Auditor Management ----------------
 @router.get("/auditors", response_model=List[schemas.UserResponse])
 def list_auditors(
@@ -140,6 +158,7 @@ def list_auditors(
     current_user=Depends(dependencies.require_role("admin", "superadmin"))
 ):
     return db.query(models.User).filter(models.User.role == "auditor").all()
+
 
 @router.post("/auditors", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
 def create_auditor(
@@ -167,13 +186,18 @@ def create_auditor(
     db.commit()
     return auditor
 
+
 @router.get("/elections", response_model=List[schemas.ElectionResponse])
 def list_elections(
     db: Session = Depends(database.get_db),
     current_user=Depends(dependencies.require_role("admin", "superadmin"))
 ):
     elections = db.query(models.Election).all()
+    # Auto-compute status for consistency
+    for e in elections:
+        e.status = get_election_status(e)
     return elections
+
 
 @router.delete("/auditors/{auditor_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_auditor(

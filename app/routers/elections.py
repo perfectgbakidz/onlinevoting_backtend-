@@ -9,17 +9,27 @@ from ..dependencies import get_db, get_current_user, require_role
 router = APIRouter(prefix="/elections", tags=["Elections"])
 
 
+def get_election_status(election: models.Election) -> str:
+    """Helper to compute election status based on time."""
+    now = datetime.utcnow()
+    if election.start_date > now:
+        return "upcoming"
+    elif election.end_date < now:
+        return "ended"
+    return "active"
+
+
 @router.get('/current', response_model=schemas.ElectionResponse)
 def get_current_election(
     db: Session = Depends(get_db),
     current_user: schemas.UserResponse = Depends(get_current_user),
 ):
-    """Fetch the current election (upcoming or ongoing)."""
+    """Fetch the current election (upcoming or active)."""
     now = datetime.utcnow()
 
     election = (
         db.query(models.Election)
-        .filter(models.Election.end_date >= now)  # 👈 only require it's not already ended
+        .filter(models.Election.end_date >= now)
         .order_by(models.Election.start_date.asc())
         .first()
     )
@@ -29,22 +39,14 @@ def get_current_election(
             detail="No active or upcoming election found"
         )
 
-    # Auto-compute status
-    if election.start_date > now:
-        computed_status = "upcoming"
-    elif election.end_date < now:
-        computed_status = "ended"
-    else:
-        computed_status = "active"
-
-    # ❌ Don’t block upcoming elections
-    if computed_status == "ended":
+    status_val = get_election_status(election)
+    if status_val == "ended":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No active election found"
         )
 
-    # You can return election + computed status if needed
+    election.status = status_val  # keep schema consistent
     return election
 
 
@@ -56,7 +58,6 @@ def cast_vote(
     current_user: schemas.UserResponse = Depends(get_current_user),
 ):
     """Cast vote(s) for one or more candidates"""
-    # Only voters can vote
     if current_user.role != "voter":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -67,11 +68,9 @@ def cast_vote(
     if not election:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Election not found")
 
-    now = datetime.utcnow()
-    if not (election.start_date <= now <= election.end_date):
+    if get_election_status(election) != "active":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Election is not active")
 
-    # Prevent double voting
     existing_vote = (
         db.query(models.Vote)
         .filter(models.Vote.user_id == current_user.id, models.Vote.election_id == election_id)
@@ -84,7 +83,6 @@ def cast_vote(
     if not candidate_ids or not isinstance(candidate_ids, list):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="candidate_ids must be a non-empty list")
 
-    # Validate candidates
     valid_candidates = (
         db.query(models.Candidate)
         .filter(models.Candidate.id.in_(candidate_ids), models.Candidate.election_id == election_id)
@@ -93,7 +91,6 @@ def cast_vote(
     if len(valid_candidates) != len(candidate_ids):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="One or more candidates are invalid")
 
-    # Record votes (one per candidate)
     receipt = f"VOTE-{datetime.utcnow().year}-{uuid4().hex[:10].upper()}"
     for cid in candidate_ids:
         vote = models.Vote(
@@ -104,7 +101,6 @@ def cast_vote(
         )
         db.add(vote)
 
-    # Audit log
     audit = models.AuditLog(
         user_email=current_user.email,
         action="Submit Vote",
@@ -120,7 +116,7 @@ def cast_vote(
 @router.get('/results/live', response_model=schemas.LiveResultsResponse)
 def live_results(
     db: Session = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user),  # ✅ any logged-in user
+    current_user: schemas.UserResponse = Depends(get_current_user),
 ):
     """Return live results (visible to voters, auditors, and admins)"""
     total = db.query(models.Vote).count()
@@ -135,7 +131,6 @@ def live_results(
             "position": c.position
         })
     return data
-
 
 
 @router.get('/stats/voters')
