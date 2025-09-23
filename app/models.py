@@ -15,7 +15,7 @@ class UserRole(str, enum.Enum):
 
 class ElectionStatus(str, enum.Enum):
     upcoming = "upcoming"
-    ongoing = "ongoing"
+    ongoing = "active"
     completed = "completed"
 
 

@@ -35,7 +35,7 @@ def get_current_election(
     elif election.end_date < now:
         computed_status = "ended"
     else:
-        computed_status = "ongoing"
+        computed_status = "active"
 
     # ❌ Don’t block upcoming elections
     if computed_status == "ended":
