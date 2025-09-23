@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import Optional, List, Literal, Annotated
 from datetime import datetime
+from enum import Enum
 
 
 # ======================
@@ -76,6 +77,11 @@ class CandidateResponse(CandidateBase):
 # ELECTIONS
 # ======================
 
+class ElectionStatus(str, Enum):
+    upcoming = "upcoming"
+    ongoing = "ongoing"
+    completed = "completed"
+
 class ElectionBase(BaseModel):
     title: str = Field(..., examples=["NACOS General Election 2026"])
     start_date: datetime = Field(..., alias="startDate")
@@ -89,19 +95,22 @@ class ElectionCreate(ElectionBase):
     pass
 
 
+
 class ElectionUpdate(BaseModel):
-    title: Optional[str] = Field(None, examples=["NACOS General Election 2026"])
+    title: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    status: Optional[Literal["upcoming", "ongoing", "completed"]] = None
+    status: Optional[ElectionStatus] = None
+
 
 
 class ElectionResponse(ElectionBase):
     id: int
-    status: Literal["upcoming", "ongoing", "completed"] = "upcoming"
+    status: ElectionStatus = ElectionStatus.upcoming
     candidates: List[CandidateResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
 
 
 # ======================
