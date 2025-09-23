@@ -79,7 +79,7 @@ class CandidateResponse(CandidateBase):
 
 class ElectionStatus(str, Enum):
     upcoming = "upcoming"
-    ongoing = "ongoing"
+    ongoing = "active"
     completed = "completed"
 
 class ElectionBase(BaseModel):
