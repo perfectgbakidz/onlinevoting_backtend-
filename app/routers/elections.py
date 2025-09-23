@@ -136,7 +136,7 @@ def live_results(
 @router.get('/stats/voters')
 def voter_stats(
     db: Session = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(require_role("admin")),
+    current_user: schemas.UserResponse = Depends(require_role("admin", "superadmin", "auditor")),
 ):
     """Return voter participation stats (restricted to admins + superadmins)"""
     total_voters = db.query(models.User).filter(models.User.role == "voter").count()

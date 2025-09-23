@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
+import pytz 
 from .. import models, schemas, database, dependencies, auth
 import shutil
 import uuid
@@ -11,6 +12,14 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 UPLOAD_DIR = "uploads/candidates"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def to_utc(dt: datetime) -> datetime:
+    """Convert naive or local datetime to UTC-aware datetime."""
+    if dt.tzinfo is None:  # assume local (Africa/Lagos) if no tz
+        local_tz = pytz.timezone("Africa/Lagos")
+        dt = local_tz.localize(dt)
+    return dt.astimezone(pytz.utc)
 
 
 def get_election_status(election: models.Election) -> str:
@@ -50,10 +59,14 @@ def create_election(
     db: Session = Depends(database.get_db),
     current_user=Depends(dependencies.require_role("admin", "superadmin"))
 ):
+    # Force UTC storage
+    start_utc = to_utc(election_in.start_date)
+    end_utc = to_utc(election_in.end_date)
+
     ev = models.Election(
         title=election_in.title,
-        start_date=election_in.start_date,
-        end_date=election_in.end_date,
+        start_date=start_utc,
+        end_date=end_utc,
     )
     ev.status = get_election_status(ev)
 
@@ -86,9 +99,9 @@ def update_election(
     if election_in.title:
         election.title = election_in.title
     if election_in.start_date:
-        election.start_date = election_in.start_date
+        election.start_date = to_utc(election_in.start_date)
     if election_in.end_date:
-        election.end_date = election_in.end_date
+        election.end_date = to_utc(election_in.end_date)
 
     # Always recompute status
     election.status = get_election_status(election)
