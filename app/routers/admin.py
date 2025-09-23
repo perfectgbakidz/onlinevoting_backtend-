@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
-import pytz 
+from datetime import datetime, timezone
 from .. import models, schemas, database, dependencies, auth
 import shutil
 import uuid
@@ -14,17 +13,17 @@ UPLOAD_DIR = "uploads/candidates"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
+# ---------------- Helpers ----------------
 def to_utc(dt: datetime) -> datetime:
-    """Convert naive or local datetime to UTC-aware datetime."""
-    if dt.tzinfo is None:  # assume local (Africa/Lagos) if no tz
-        local_tz = pytz.timezone("Africa/Lagos")
-        dt = local_tz.localize(dt)
-    return dt.astimezone(pytz.utc)
+    """Convert naive or tz-aware datetime to UTC-aware datetime."""
+    if dt.tzinfo is None:  # assume naive -> treat as local time
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def get_election_status(election: models.Election) -> str:
-    """Helper to compute status for consistency."""
-    now = datetime.utcnow()
+    """Compute status based on UTC-aware datetimes."""
+    now = datetime.now(timezone.utc)  # tz-aware UTC
     if election.start_date > now:
         return "upcoming"
     elif election.end_date < now:
